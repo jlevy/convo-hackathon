@@ -28,6 +28,7 @@ def load_scenario():
   scenario_name = current_scenario()
   if scenario_name:
     st.session_state.convo_state = ConversationState(st.session_state.scenario)
+  st.session_state.scenario_details = ""
   st.session_state.is_prepared = False
   st.session_state.is_scorable = False
 
@@ -37,8 +38,7 @@ def start_conversation():
   load_scenario()
   st.session_state.is_prepared = True
   # TODO: Set job type and history from scenario-defined input fields
-  st.session_state.convo_state.greet_user(job_type="software engineer",
-                                          job_history="")
+  st.session_state.convo_state.greet_user(context="")
 
 
 def next_step():
@@ -88,6 +88,14 @@ def speak(text):
 
 tab_converse, tab_reflect = st.tabs(["Converse", "Reflect"])
 
+
+def scenario_details():
+  if "scenario_details" in st.session_state:
+    return st.session_state.scenario_details
+  else:
+    return ""
+
+
 with tab_converse:
   if "is_prepared" not in st.session_state or not st.session_state.is_prepared:
     st.markdown("This part is optional but helps customize the conversaton.")
@@ -130,8 +138,11 @@ with tab_converse:
           if transcription:
             log.info("Got transcription: %s", transcription)
             # Get reply to transcribed audio
+
             did_update = st.session_state.convo_state.handle_message(
-              user_input=transcription, audio_file=audio_file, context="")
+              user_input=transcription,
+              audio_file=audio_file,
+              context=scenario_details())
             if did_update:
               st.experimental_rerun()
 
@@ -149,16 +160,32 @@ with tab_reflect:
       log.info("score %s", score)
       if score:
         st.markdown(f"""
-        <div style="background: #eee">
-        **Clarity:** {score["clarity"]}/10
+        <div style="background: #eee; padding: 8px;">
         
-        **Confidence:** {score["confidence"]}/10
+        🌤️ **Clarity:** **{score["clarity"]}**/10
         
-        **Vocabulary:** {score["vocabulary"]}/10
+        💪 **Confidence:** **{score["confidence"]}**/10
         
-        **Poise:** {score["poise"]}/10
+        🧠 **Vocabulary:** **{score["vocabulary"]}**/10
+        
+        🧘 **Poise:** **{score["poise"]}**/10
         </div>
         """,
                     unsafe_allow_html=True)
-      st.info(str(score))
-  st.button("Analyze", on_click=do_score_callback)
+      if score and 'audio_metrics' in score:
+        audio_metrics = score['audio_metrics']
+        log.info("audio metrics: %s", audio_metrics)
+        st.markdown(f"""
+        <div style="background: #eef; padding: 8px;">
+         
+        **Total fillers:** {score["total_fillers"]}
+        
+        **Average WPM:** {score["avg_wpm"]}
+
+        **Percent silent:** {score["percent_silent"]}
+
+        </div>
+        """)
+      else:
+        st.markdown("")
+        st.button("Advanced Analysis", on_click=do_score_callback)
