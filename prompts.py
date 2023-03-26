@@ -12,6 +12,7 @@ from langchain.prompts.chat import (
 from langchain.schema import (AIMessage, HumanMessage, SystemMessage)
 import openai
 from mutagen.mp3 import MP3
+import librosa
 from speech_handling import get_num_fillers, get_silent_time
 
 os.environ[
@@ -66,6 +67,26 @@ Conversation history:
 ----
 """
 
+FIRST_DATE_TEMPLATE = """You are a human on a first date.
+
+Ask the the other person questions about their background and what motivates then. Only ask one question at a time,
+and be friendly, engaged, and mildly flirty.
+
+Conversation history: 
+{history}
+----
+"""
+
+AI_HACKATHON_PROMPT_TEMPLATE = """You are a judge at an AI Hackathon focused on social good.
+
+Ask the candidate detailed questions about what they have built, specifically around how it helps society, how creative it is,
+the underlying technology and innovation. You should only ask one question at a time.
+
+Conversation history: 
+{history}
+----
+"""
+
 EVALUATE_PROMPT_TEMPLATE = """
 Evaluate the following transcript from an in-person conversation for the following:
 
@@ -74,7 +95,7 @@ Evaluate the following transcript from an in-person conversation for the followi
 * Vocabulary on a scale of 1-10, there 1 is the candidate always chose the wrong word and used incomprehensible English, or 10 where the candidate used advanced language and terminology.
 * Poise on a scale of 1-10, where 1 is the candidate seemed very awkward and 10 is the candidate seemed poised and socially aware.
 
-You must return the evaluation scores in a JSON format with the keys "clarity", "confidence", "vocabulary", "poise".
+You must return the evaluation scores and summaryt in a JSON format with the keys "clarity", "confidence", "vocabulary", "poise", and "summary". You MUST not return anything other than a single, valid JSON object.
 
 —
 
@@ -93,12 +114,17 @@ SCENARIOS = [
     PARTY_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE),
   Scenario(
     "CalFresh Benefit Interview",
-    "You're want to prepare for interviewing with CalFresh for benefit eligibility.",
+    "You want to prepare for interviewing with CalFresh for benefit eligibility.",
     CALFRESH_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE),
+  Scenario("First Date", "You want to prepare for a first date.",
+           FIRST_DATE_TEMPLATE, EVALUATE_PROMPT_TEMPLATE),
   Scenario(
     "Testify Before Congress",
     "You want to prepare a hostile interview in Congress about your company's monopoly.",
-    CONGRESS_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE)
+    CONGRESS_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE),
+  Scenario("Pitch at an AI Hackathon",
+           "Prepare a demo pitch at an AI hackaton.",
+           AI_HACKATHON_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE)
 ]
 
 import logging
@@ -121,6 +147,8 @@ INTERVIEW_PROMPT = build_scenario_prompt(INTERVIEW_PROMPT_TEMPLATE)
 CALFRESH_PROMPT = build_scenario_prompt(CALFRESH_PROMPT_TEMPLATE)
 EVALUATE_PROMPT = build_scenario_prompt(EVALUATE_PROMPT_TEMPLATE)
 CONGRESS_PROMPT = build_scenario_prompt(CONGRESS_PROMPT_TEMPLATE)
+HACKATHON_PROMPT = build_scenario_prompt(AI_HACKATHON_PROMPT_TEMPLATE)
+FIRST_DATE_PROMPT = build_scenario_prompt(FIRST_DATE_TEMPLATE)
 
 MAX_CONVO_CNT = 3
 
@@ -154,13 +182,16 @@ class ConversationState:
     self.active = True
 
   def handle_message(self, user_input, audio_file, context):
+    log.info(f"Constructing prompt with context: {context}")
     if user_input == self.last_user_input:
       return False
     self.last_user_input = user_input
     messages = []
     if self.scenario_name == "Bigco Job Interview":
+      if context == "":
+        context = "unknown job history"
       messages = INTERVIEW_PROMPT.format_prompt(job_type=context,
-                                                job_history=job_history,
+                                                job_history=context,
                                                 history=self.format_history(
                                                   self.history),
                                                 text=user_input).to_messages()
@@ -176,6 +207,15 @@ class ConversationState:
       messages = CONGRESS_PROMPT.format_prompt(history=self.format_history(
         self.history),
                                                text=user_input).to_messages()
+    elif self.scenario_name == "Pitch at an AI Hackathon":
+      messages = HACKATHON_PROMPT.format_prompt(history=self.format_history(
+        self.history),
+                                                text=user_input).to_messages()
+    elif self.scenario_name == "First Date":
+      messages = FIRST_DATE_PROMPT.format_prompt(
+        history=self.format_history(self.history),
+        text=user_input).to_messages()
+
     log.debug(f'Calling OpenAI with input: ${user_input}')
     output = chat(messages)
     ai_response = output.content
@@ -195,47 +235,54 @@ class ConversationState:
       log.warning(
         'Cannot calculate wpms because audio len and transcription do not match'
       )
+      log.warning(audio_lens)
+      log.warning(transcription_lens)
       return None
+
+  def audio_metrics(self):
+    ret = {}
+
+    audio_lens = [
+      # else assumes .wav case - librosa requires numpy 1.23.1 not 1.24, bugs out
+      MP3(f).info.length if f[-4:] == '.mp3' else librosa.get_duration(
+        filename=f) for f in self.audio_history
+    ]
+
+    ret['avg_wpm'] = self.calc_avg_wpm(audio_lens)
+
+    fillers = [
+      get_num_fillers(audio_path) for audio_path in self.audio_history
+    ]
+
+    ret['total_fillers'] = sum(fillers)
+
+    silent_time = [
+      get_silent_time(audio_path) for audio_path in self.audio_history
+    ]
+
+    if len(audio_lens) > 0:
+      ret['percent_silent'] = (sum(silent_time) / sum(audio_lens)) * 100
+
+    else:
+      ret['percent_silent'] = None
+      log.warning('Could not calculate % silent, division by 0! No audio_lens')
+
+    log.debug('Got audio metrics')
+    return ret
 
   def score_conversation(self, do_audio=False):
     messages = EVALUATE_PROMPT.format_prompt(
       transcript=self.history_for_prompt(), text="").to_messages()
     output = chat(messages)
 
-    log.info("eval output: %s", output)
-
-    if do_audio:
-      if self.audio_history:
-        log.debug('Excample audio history path:')
-        log.debug(self.audio_history[0])
-      audio_lens = [
-        # else assumes .wav case
-        MP3(f).info.length if f[-4:] == '.mp3' else librosa.get_duration(
-          filename=f) for f in self.audio_history
-      ]
-      avg_wpm = self.calc_avg_wpm(audio_lens)
-
-      if avg_wpm:
-        output.content['avg_wpm'] = avg_wpm
-
-      fillers = [
-        get_num_fillers(audio_path) for audio_path in self.audio_history
-      ]
-      #output.content['total_fillers'] = sum(fillers)
-      total_fillers = sum(fillers)
-
-      silent_time = [
-        get_silent_time(audio_path) for audio_path in self.audio_history
-      ]
-      #output.content['percent_silent'] = (sum(silent_time)/sum(audio_lens))*100
-      if len(audio_lens) > 0:
-        percent_silent = (sum(silent_time) / sum(audio_lens)) * 100
-      else:
-        log.warning(
-          'Could not calculate % silent, division by 0! No audio_lens')
+    log.info("Conversation Score Output: %s", output)
 
     try:
       self.score = json.loads(output.content)
+      if do_audio:
+        self.score['audio_metrics'] = self.audio_metrics()
     except:
-      self.score = str(output.content)
+      log.error(f'could not parse json output from prompt: {output.content}')
+      # Use fallback mock score
+      self.score = {"clarity": 7, "confidence": 6, "vocabulary": 4, "poise": 5}
     return self.score
