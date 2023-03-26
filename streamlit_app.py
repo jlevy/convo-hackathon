@@ -74,13 +74,17 @@ def speak(text):
     audio_bytes = audio_file.read()
     log.info("Got synth speech size %s: %s", len(audio_bytes),
              agent_utterance_audio_file)
-  # TODO: Auto play
   # https://github.com/streamlit/streamlit/issues/2446
   st.audio(audio_bytes, format='audio/mp3')
+  # TODO: Put this into static and serve to make faster:
   #st.write('<audio autoplay src="data:audio/mp3;base64,%s" type="audio/mp3">' %
   #         (base64.b64encode(audio_bytes).decode('utf-8')),
   #         unsafe_allow_html=True)
 
+
+#def scenario_details_callback(details):
+#  log(f'Set scenario details: {details}')
+#  st.session_state.scenario_details = details
 
 tab_converse, tab_reflect = st.tabs(["Converse", "Reflect"])
 
@@ -95,8 +99,7 @@ with tab_converse:
       key="scenario_details",
       disabled=False,
       placeholder=
-      "A recruiter I talked to at Google who wants me to call back with details.",
-      #on_change=scenario_details_callback, #TODO
+      "A recruiter I talked to at Google who wants me to call back with details."
     )
 
     st.button("Let's start the conversation!", on_click=start_conversation)
@@ -128,10 +131,7 @@ with tab_converse:
             log.info("Got transcription: %s", transcription)
             # Get reply to transcribed audio
             did_update = st.session_state.convo_state.handle_message(
-              user_input=transcription,
-              audio_file=audio_file,
-              job_type="software engineer",
-              job_history="")
+              user_input=transcription, audio_file=audio_file, context="")
             if did_update:
               st.experimental_rerun()
 
@@ -149,7 +149,7 @@ with tab_reflect:
       log.info("score %s", score)
       if score:
         st.markdown(f"""
-        <div style="background: #333">
+        <div style="background: #eee">
         **Clarity:** {score["clarity"]}/10
         
         **Confidence:** {score["confidence"]}/10
@@ -159,6 +159,6 @@ with tab_reflect:
         **Poise:** {score["poise"]}/10
         </div>
         """,
-                    unsave_allow_html=True)
+                    unsafe_allow_html=True)
       st.info(str(score))
   st.button("Analyze", on_click=do_score_callback)

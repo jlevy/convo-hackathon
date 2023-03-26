@@ -44,6 +44,28 @@ Conversation history:
 ----
 """
 
+CALFRESH_PROMPT_TEMPLATE = """You are a representative for CalFresh and are interviewing an applicant for benefit eligibility.
+
+Your job is to learn more about the candidate and ask relevant questions 
+to learn more about them to determine if they are elegible for benefits.
+You should only ask one question at a time.
+
+Conversation history: 
+{history}
+----
+"""
+
+CONGRESS_PROMPT_TEMPLATE = """You are a powerful US Senator from a large state. Your job is to grandstand, ask questions,
+and advance a murky political agenda.
+
+Ask the candidate hostile questions about the regulation of AI technology, while demonstrating no real
+knowledge of the technology. The questions should be short buy vauge. Address the canidate as "Whoever you are".
+
+Conversation history: 
+{history}
+----
+"""
+
 EVALUATE_PROMPT_TEMPLATE = """
 Evaluate the following transcript from an in-person conversation for the following:
 
@@ -68,7 +90,15 @@ SCENARIOS = [
   Scenario(
     "Party Chitchat",
     "You're at an event and start an unexpected conversation with someone you've never met.",
-    PARTY_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE)
+    PARTY_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE),
+  Scenario(
+    "CalFresh Benefit Interview",
+    "You're want to prepare for interviewing with CalFresh for benefit eligibility.",
+    CALFRESH_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE),
+  Scenario(
+    "Testify Before Congress",
+    "You want to prepare a hostile interview in Congress about your company's monopoly.",
+    CONGRESS_PROMPT_TEMPLATE, EVALUATE_PROMPT_TEMPLATE)
 ]
 
 import logging
@@ -88,7 +118,9 @@ def build_scenario_prompt(template):
 
 PARTY_PROMPT = build_scenario_prompt(PARTY_PROMPT_TEMPLATE)
 INTERVIEW_PROMPT = build_scenario_prompt(INTERVIEW_PROMPT_TEMPLATE)
+CALFRESH_PROMPT = build_scenario_prompt(CALFRESH_PROMPT_TEMPLATE)
 EVALUATE_PROMPT = build_scenario_prompt(EVALUATE_PROMPT_TEMPLATE)
+CONGRESS_PROMPT = build_scenario_prompt(CONGRESS_PROMPT_TEMPLATE)
 
 MAX_CONVO_CNT = 3
 
@@ -117,18 +149,17 @@ class ConversationState:
   def history_for_prompt(self):
     return self.format_history(self.history)
 
-  def greet_user(self, job_type, job_history):
-    self.handle_message("", None, job_type, job_history)
+  def greet_user(self, context):
+    self.handle_message("", None, context)
     self.active = True
 
-  def handle_message(self, user_input, audio_file, job_type, job_history):
+  def handle_message(self, user_input, audio_file, context):
     if user_input == self.last_user_input:
       return False
     self.last_user_input = user_input
     messages = []
-
     if self.scenario_name == "Bigco Job Interview":
-      messages = INTERVIEW_PROMPT.format_prompt(job_type=job_type,
+      messages = INTERVIEW_PROMPT.format_prompt(job_type=context,
                                                 job_history=job_history,
                                                 history=self.format_history(
                                                   self.history),
@@ -137,6 +168,14 @@ class ConversationState:
       messages = PARTY_PROMPT.format_prompt(history=self.format_history(
         self.history),
                                             text=user_input).to_messages()
+    elif self.scenario_name == "CalFresh Benfit Interview":
+      messages = CALFRESH_PROMPT.format_prompt(history=self.format_history(
+        self.history),
+                                               text=user_input).to_messages()
+    elif self.scenario_name == "Testify Before Congress":
+      messages = CONGRESS_PROMPT.format_prompt(history=self.format_history(
+        self.history),
+                                               text=user_input).to_messages()
     log.debug(f'Calling OpenAI with input: ${user_input}')
     output = chat(messages)
     ai_response = output.content
@@ -170,7 +209,9 @@ class ConversationState:
         log.debug('Excample audio history path:')
         log.debug(self.audio_history[0])
       audio_lens = [
-        MP3(audio_file).info.length for audio_file in self.audio_history
+        # else assumes .wav case
+        MP3(f).info.length if f[-4:] == '.mp3' else librosa.get_duration(
+          filename=f) for f in self.audio_history
       ]
       avg_wpm = self.calc_avg_wpm(audio_lens)
 
