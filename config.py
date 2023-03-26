@@ -1,6 +1,8 @@
 import openai
 import os
 
+API_KEY = "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"
+
 
 def api_setup():
   # Hackathon key:
@@ -8,5 +10,4 @@ def api_setup():
   # Josh key
   # API_KEY = "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"
   # Clay key
-  API_KEY = "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"
   openai.api_key = API_KEY

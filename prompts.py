@@ -14,9 +14,9 @@ import openai
 from mutagen.mp3 import MP3
 import librosa
 from speech_handling import get_num_fillers, get_silent_time
+from config import API_KEY
 
-os.environ[
-  "OPENAI_API_KEY"] = "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"
+os.environ["OPENAI_API_KEY"] = API_KEY
 
 Scenario = namedtuple(
   "Scenario",

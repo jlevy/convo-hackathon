@@ -75,11 +75,11 @@ def speak(text):
     log.info("Got synth speech size %s: %s", len(audio_bytes),
              agent_utterance_audio_file)
   # https://github.com/streamlit/streamlit/issues/2446
-  st.audio(audio_bytes, format='audio/mp3')
+  # st.audio(audio_bytes, format='audio/mp3')
   # TODO: Put this into static and serve to make faster:
-  #st.write('<audio autoplay src="data:audio/mp3;base64,%s" type="audio/mp3">' %
-  #         (base64.b64encode(audio_bytes).decode('utf-8')),
-  #         unsafe_allow_html=True)
+  st.write('<audio autoplay src="data:audio/mp3;base64,%s" type="audio/mp3">' %
+           (base64.b64encode(audio_bytes).decode('utf-8')),
+           unsafe_allow_html=True)
 
 
 #def scenario_details_callback(details):
@@ -98,17 +98,15 @@ def scenario_details():
 
 with tab_converse:
   if "is_prepared" not in st.session_state or not st.session_state.is_prepared:
-    st.markdown("This part is optional but helps customize the conversaton.")
 
-    st.markdown("Can you say anything else about who you'll be talking with?")
-
-    st.text_input(
-      "Details:",
-      key="scenario_details",
-      disabled=False,
-      placeholder=
-      "A recruiter I talked to at Google who wants me to call back with details."
+    st.markdown(
+      "Can you say anything else about who you'll be talking with? (This part is optional but helps customize the conversaton.)"
     )
+
+    st.text_input("Details:",
+                  key="scenario_details",
+                  disabled=False,
+                  placeholder="Talking to a recruiter at Google")
 
     st.button("Let's start the conversation!", on_click=start_conversation)
   else:
@@ -172,7 +170,7 @@ with tab_reflect:
         </div>
         """,
                     unsafe_allow_html=True)
-      if score and 'audio_metrics' in score:
+      if 'audio_metrics' in score and 'audio_metrics' in score:
         audio_metrics = score['audio_metrics']
         log.info("audio metrics: %s", audio_metrics)
         st.markdown(f"""
@@ -188,4 +186,4 @@ with tab_reflect:
         """)
       else:
         st.markdown("")
-        st.button("Advanced Analysis", on_click=do_score_callback)
+        st.button("Audio Analysis", on_click=do_score_callback)
