@@ -53,7 +53,7 @@ def synth_text_as_file(text):
   log.debug(f'calling TTS API with text: {text}')
   response = requests.post(url,
                            headers={
-                             'xi-api-key': '7c9d07690c72866906179decb3bc9dd3',
+                             'xi-api-key': 'd1374e7d37f21c86dd4a6739422e27b9',
                              'accept': 'audio/mpeg',
                              'Content-Type': 'application/json'
                            },
